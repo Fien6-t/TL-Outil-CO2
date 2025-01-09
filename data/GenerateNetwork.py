@@ -34,8 +34,9 @@ from rtree import index
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # 0.2. Set paths
-data_folder = os.path.join(os.path.dirname(__file__), "data")
-p_in = data_folder + "/INPUT/"
+base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+p = os.path.join(base_path, "data", "INPUT")
+p_in = p
 
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
