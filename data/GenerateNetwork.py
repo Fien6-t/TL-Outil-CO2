@@ -132,8 +132,8 @@ def analyze_multiple_lines(lines_with_weights, emission_car=0.15, emission_TP=0.
     # 1.0. Load data and set parameters
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # Load polygons (example: GeoDataFrame of polygons)
-    gdf = gpd.read_file(p_in + "PALM_Zones_singleparts_clean.gpkg")
-    df = pd.read_csv(p_in + 'Info_ODs_alldata.csv')
+    gdf = gpd.read_file(os.path.join(p_in, "PALM_Zones_singleparts_clean.gpkg"))
+    df = pd.read_csv(os.path.join(p_in, 'Info_ODs_alldata.csv'))
     
     # Beta: coeff in utility function
     beta_tt = -0.10 # travel time coefficient
