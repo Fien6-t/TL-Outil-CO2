@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
+import zipfile
 import streamlit as st
 from streamlit_folium import st_folium
 import folium
@@ -62,6 +63,12 @@ spec = importlib.util.spec_from_file_location("GenerateNetwork", generate_networ
 generate_network = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generate_network)
 
+# Function to check and convert CRS to WGS84
+def ensure_wgs84(gdf):
+    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(epsg=4326)
+    return gdf
+
 # Set Streamlit page configuration
 st.set_page_config(
         page_title="Transports Lausannois: outil d'estimation des gains CO2",
@@ -94,7 +101,7 @@ if "gdf" not in st.session_state:
 
 # Step 1: Set emission parameters
 # Sidebar
-st.sidebar.header("1. Paramètres")
+st.sidebar.header("1. Paramètres d'émissions")
 
 # Baseline emissions
 baseline_car_actual = 0.11
@@ -111,8 +118,12 @@ baseline_pt_indirect_fully_electric = 0.004
 emission_type = st.sidebar.radio("Type d'émissions", ["Directes", "Indirectes"])
 
 # Electrification sliders
-car_electrification = st.sidebar.slider("Électrification des voitures (%)", 0, 100, 0)
-pt_electrification = st.sidebar.slider("Électrification des transports publics (%)", 0, 100, 0)
+car_electrification_display = st.sidebar.slider("Électrification des voitures (%)", 18.2, 100.0, 18.2)
+car_electrification = (car_electrification_display - 18.2) / (100 - 18.2) * 100
+
+pt_electrification_display = st.sidebar.slider("Électrification des transports publics (%)", 40.0, 100.0, 40.0)
+pt_electrification = (pt_electrification_display - 40.0) / (100 - 40.0) * 100
+
 
 # Compute emission factors
 if emission_type == "Directes":
@@ -122,8 +133,8 @@ else:
     emission_car = baseline_car_indirect_actual + (baseline_car_indirect_fully_electric - baseline_car_indirect_actual) * (car_electrification / 100)
     emission_pt = baseline_pt_indirect_actual + (baseline_pt_indirect_fully_electric - baseline_pt_indirect_actual) * (pt_electrification / 100)
 
-st.sidebar.write(f"Facteur d'émission (voiture): {emission_car:.4f} kg CO₂/km")
-st.sidebar.write(f"Facteur d'émission (TP): {emission_pt:.4f} kg CO₂/km")
+st.sidebar.write(f"Facteur d'émission (voiture): {emission_car:.2f} kg CO₂/km")
+st.sidebar.write(f"Facteur d'émission (TP): {emission_pt:.3f} kg CO₂/km")
 
 
 # Step 2: Draw lines on the map
@@ -182,10 +193,14 @@ if map_output and map_output.get('all_drawings'):
 
 # Step 2.b: Charger les lignes d'un gpkg file
 st.sidebar.subheader("2.a. Dessinez une ou plusieurs lignes sur la carte, ou")
-st.sidebar.subheader("2.b. Chargez un fichier GeoPackage")
-uploaded_file = st.sidebar.file_uploader("Chargez un fichier GeoPackage", type="gpkg")
-if uploaded_file:
-    gdf = gpd.read_file(uploaded_file)
+st.sidebar.subheader("2.b. Chargez un fichier de lignes")
+
+# Step 2.b.1: Charger un fichier GeoPackage
+st.sidebar.subheader("2.b.1. Charger un fichier GeoPackage")
+uploaded_gpkg = st.sidebar.file_uploader("Chargez un fichier GeoPackage (format .gpkg)", type=["gpkg"])
+if uploaded_gpkg:
+    gdf = gpd.read_file(uploaded_gpkg)
+    gdf = ensure_wgs84(gdf)
     st.session_state["uploaded_gpkg"] = gdf
     st.sidebar.success("GeoPackage chargé avec succès !")
 
@@ -211,6 +226,50 @@ if uploaded_file:
                 "frequency": frequency
             })
         st.sidebar.success("Lignes ajoutées depuis GeoPackage !")
+
+# Step 2.b.2: Charger un fichier Shapefile
+st.sidebar.subheader("2.b.2. Charger un fichier Shapefile")
+shapefile_zip = st.sidebar.file_uploader("Chargez un fichier Shapefile (format .zip)", type=["zip"])
+if shapefile_zip:
+    with zipfile.ZipFile(shapefile_zip, "r") as z:
+        file_list = z.namelist()
+        temp_dir = "temp_shapefile"
+        os.makedirs(temp_dir, exist_ok=True)
+        z.extractall(temp_dir)
+
+        # Find the .shp file
+        shp_file = [f for f in file_list if f.endswith(".shp")]
+        if shp_file:
+            shp_path = os.path.join(temp_dir, shp_file[0])
+            gdf = gpd.read_file(shp_path)
+            gdf = ensure_wgs84(gdf)
+            st.session_state["uploaded_shp"] = gdf
+            st.sidebar.success("Shapefile chargé avec succès !")
+
+            # Select columns for duration, frequency, and name
+            duration_col = st.sidebar.selectbox("Colonne pour la durée", gdf.columns, key="shp_duration")
+            frequency_col = st.sidebar.selectbox("Colonne pour la fréquence", gdf.columns, key="shp_frequency")
+            name_col = st.sidebar.selectbox("Colonne pour le nom des lignes", gdf.columns, key="shp_name")
+
+            if st.sidebar.button("Ajouter lignes depuis Shapefile"):
+                for _, row in gdf.iterrows():
+                    line = row.geometry
+                    name = str(row[name_col])
+                    try:
+                        duration = float(row[duration_col])
+                        frequency = float(row[frequency_col])
+                    except ValueError:
+                        st.sidebar.error(f"Ligne '{name}' a des valeurs non valides (non convertibles en numérique) pour la durée ou la fréquence.")
+                        continue
+                    st.session_state["lines_data"].append({
+                        "line": line,
+                        "name": name,
+                        "duration": duration,
+                        "frequency": frequency
+                    })
+                st.sidebar.success("Lignes ajoutées depuis Shapefile !")
+        else:
+            st.sidebar.error("Aucun fichier .shp trouvé dans l'archive ZIP.")
 
 # Step 2.c. Modify drawn line(s)
 st.sidebar.subheader("2.c.Modifiez les paramètres d'une ligne existante")
