@@ -215,7 +215,7 @@ if uploaded_gpkg:
             name = str(row[name_col])  # Ensure names are strings
             try:
                 duration = float(row[duration_col])  # Convert to numeric
-                frequency = float(row[frequency_col])  # Convert to numeric
+                frequency = int(float(row[frequency_col]))  # Convert to numeric
             except ValueError:
                 st.sidebar.error(f"Ligne '{name}' a des valeurs non valides (non convertibles en numérique) pour la durée ou la fréquence.")
                 continue
@@ -257,7 +257,7 @@ if shapefile_zip:
                     name = str(row[name_col])
                     try:
                         duration = float(row[duration_col])
-                        frequency = float(row[frequency_col])
+                        frequency = int(float(row[frequency_col]))
                     except ValueError:
                         st.sidebar.error(f"Ligne '{name}' a des valeurs non valides (non convertibles en numérique) pour la durée ou la fréquence.")
                         continue
